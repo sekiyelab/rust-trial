@@ -86,8 +86,8 @@ async fn get_id_list() -> Result<HashSet<String>, Box<dyn std::error::Error>> {
     Ok(ids)
 }
 
-async fn get_previous_id_list() -> Result<HashSet<String>, Box<dyn std::error::Error>> {
-    let mut hm = HashSet::<String>::new();
+async fn get_previous_id_list() -> Result<HashMap<String, (f64, f64)>, Box<dyn std::error::Error>> {
+    let mut hm = HashMap::<String, (f64, f64)>::new();
     let url = env::var("DATA_URL")?;
     let gzip = reqwest::get(url).await?.bytes().await?;
     let mut d = GzDecoder::new(&*gzip);
@@ -97,7 +97,9 @@ async fn get_previous_id_list() -> Result<HashSet<String>, Box<dyn std::error::E
     while let Some(result) = rdr.records().next() {
         let record = result?;
         let id = &record[2];
-        hm.insert(id.to_string());
+        let lat = record[0].parse()?;
+        let lng = record[1].parse()?;
+        hm.insert(id.to_string(), (lat, lng));
     }
     Ok(hm)
 }
@@ -190,18 +192,69 @@ struct Record<'a> {
     id: &'a str,
 }
 
+#[derive(Deserialize, Debug)]
+#[allow(non_snake_case)]
+struct Snippet {
+    liveBroadcastContent: String,
+}
+
+#[allow(non_snake_case)]
+#[derive(Deserialize, Debug)]
+struct VideoItem2 {
+    snippet: Snippet,
+}
+
+#[derive(Deserialize, Debug)]
+struct VideoResult2 {
+    items: Vec<VideoItem2>,
+}
+
+async fn is_live(id: &str, key: &str) -> bool {
+    match env::var("LIVE_URL_BASE") {
+        Ok(url_base) => {
+            let url = url_base + "&key=" + key + "&id=" + id;
+            match reqwest::get(url).await {
+                Ok(response) => match response.json::<VideoResult2>().await {
+                    Ok(body) => {
+                        if !body.items.is_empty() {
+                            &body.items[0].snippet.liveBroadcastContent == "live"
+                        } else {
+                            false
+                        }
+                    }
+                    Err(_) => false,
+                },
+                Err(_) => false,
+            }
+        }
+        Err(_) => false,
+    }
+}
+
+async fn remove_garbage(key: &str, locations: &mut HashMap<String, (f64, f64)>) {
+    let mut v: Vec<String> = vec![];
+    for (id, _) in locations.iter() {
+        if !is_live(id, key).await {
+            v.push(id.to_string());
+        }
+    }
+    for id in v {
+        locations.remove(&id);
+    }
+}
+
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let mut ids = get_id_list().await?;
-    ids.extend(get_previous_id_list().await?);
-    let mut locations = HashMap::<&str, (f64, f64)>::new();
-    let mut undefined = HashSet::<&str>::new();
+    let mut locations = get_previous_id_list().await?;
     let key = env::var("DEVELOPER_KEY2")?;
+    remove_garbage(&key, &mut locations).await;
+    let ids = get_id_list().await?;
+    let mut undefined = HashSet::<&str>::new();
     for id in &ids {
         match get_location(id, &key).await {
             Ok(location) => {
                 println!("location found");
-                locations.insert(id, location);
+                locations.insert(id.to_string(), location);
             }
             Err(_) => {
                 println!("location not found");
@@ -214,7 +267,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         match get_location2(id, &google_maps_client).await {
             Ok(location) => {
                 println!("location2 found");
-                locations.insert(id, location);
+                locations.insert(id.to_string(), location);
             }
             Err(_) => {
                 println!("location2 not found");
@@ -226,7 +279,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         wtr.serialize(Record {
             lat: v.0,
             lng: v.1,
-            id: k,
+            id: &k,
         })?;
     }
     let data = wtr.into_inner()?;
