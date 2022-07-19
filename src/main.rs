@@ -56,6 +56,20 @@ async fn get_queries() -> Result<Vec<String>, Box<dyn std::error::Error>> {
     Ok(ret)
 }
 
+async fn get_blacklist() -> Result<HashSet<String>, Box<dyn std::error::Error>> {
+    let url = env::var("BLACKLIST_URL")?;
+    let gzip = reqwest::get(url).await?.bytes().await?;
+    let mut d = GzDecoder::new(&*gzip);
+    let mut s = String::new();
+    d.read_to_string(&mut s).unwrap();
+    let v: Vec<&str> = s.split('\n').collect();
+    let mut ret = HashSet::<String>::new();
+    for id in v {
+        ret.insert(id.to_string());
+    }
+    Ok(ret)
+}
+
 async fn get_id_list() -> Result<HashSet<String>, Box<dyn std::error::Error>> {
     let xs = get_queries().await?;
     let mut ids = HashSet::<String>::new();
@@ -65,7 +79,9 @@ async fn get_id_list() -> Result<HashSet<String>, Box<dyn std::error::Error>> {
         env::var("DEVELOPER_KEY2")?,
     ];
     let mut i = 0;
-    for query in xs {
+    let total = xs.len();
+    for (count, query) in xs.into_iter().enumerate() {
+        println!("search {}/{}", count, total);
         loop {
             match search(&query, &keys[i]).await {
                 Ok(ret) => {
@@ -233,8 +249,10 @@ async fn is_live(id: &str, key: &str) -> bool {
 
 async fn remove_garbage(key: &str, locations: &mut HashMap<String, (f64, f64)>) {
     let mut v: Vec<String> = vec![];
-    for (id, _) in locations.iter() {
+    for (count, (id, _)) in locations.iter().enumerate() {
+        println!("checking {}/{}", count, locations.len());
         if !is_live(id, key).await {
+            println!("invalid");
             v.push(id.to_string());
         }
     }
@@ -243,14 +261,55 @@ async fn remove_garbage(key: &str, locations: &mut HashMap<String, (f64, f64)>) 
     }
 }
 
+async fn write_geo(
+    locations: HashMap<String, (f64, f64)>,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let mut wtr = WriterBuilder::new().has_headers(false).from_writer(vec![]);
+    for (k, v) in locations {
+        wtr.serialize(Record {
+            lat: v.0,
+            lng: v.1,
+            id: &k,
+        })?;
+    }
+    let data = wtr.into_inner()?;
+    let file = File::create("geo.csv.gz")?;
+    GzEncoder::new(file, Compression::default()).write_all(&data)?;
+    Ok(())
+}
+
+async fn write_blacklist(blacklist: HashSet<String>) -> Result<(), Box<dyn std::error::Error>> {
+    let file = File::create("blacklist.txt.gz")?;
+    let mut encoder = GzEncoder::new(file, Compression::default());
+    for id in blacklist {
+        match encoder.write_fmt(format_args!("{id}\n")) {
+            Ok(_) => {}
+            Err(_) => {
+                println!("location not found");
+                break;
+            }
+        }
+    }
+    Ok(())
+}
+
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let mut blacklist = get_blacklist().await?;
     let mut locations = get_previous_id_list().await?;
     let key = env::var("DEVELOPER_KEY2")?;
     remove_garbage(&key, &mut locations).await;
     let ids = get_id_list().await?;
+    let total = ids.len();
     let mut undefined = HashSet::<&str>::new();
-    for id in &ids {
+    for (count, id) in ids.iter().enumerate() {
+        println!("location {}/{}", count, total);
+        if blacklist.contains(id) {
+            continue;
+        }
+        if locations.contains_key(id) {
+            continue;
+        }
         match get_location(id, &key).await {
             Ok(location) => {
                 println!("location found");
@@ -263,7 +322,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
     }
     let google_maps_client = ClientSettings::new(&env::var("GOOGLE_API_KEY")?);
-    for id in undefined {
+    let total = undefined.len();
+    for (count, id) in undefined.into_iter().enumerate() {
+        println!("location {}/{}", count, total);
         match get_location2(id, &google_maps_client).await {
             Ok(location) => {
                 println!("location2 found");
@@ -271,19 +332,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             }
             Err(_) => {
                 println!("location2 not found");
+                blacklist.insert(id.to_string());
             }
         }
     }
-    let mut wtr = WriterBuilder::new().has_headers(false).from_writer(vec![]);
-    for (k, v) in locations {
-        wtr.serialize(Record {
-            lat: v.0,
-            lng: v.1,
-            id: &k,
-        })?;
-    }
-    let data = wtr.into_inner()?;
-    let file = File::create("geo.csv.gz")?;
-    GzEncoder::new(file, Compression::default()).write_all(&data)?;
+    write_geo(locations).await?;
+    write_blacklist(blacklist).await?;
     Ok(())
 }
