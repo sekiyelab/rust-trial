@@ -4,6 +4,7 @@ use flate2::read::GzDecoder;
 use flate2::write::GzEncoder;
 use flate2::Compression;
 use google_maps::prelude::*;
+use regex::Regex;
 use rust_decimal::prelude::ToPrimitive;
 use serde::Deserialize;
 use serde::Serialize;
@@ -72,7 +73,7 @@ async fn get_blacklist() -> Result<HashSet<String>, Box<dyn std::error::Error>> 
 
 async fn get_id_list() -> Result<HashSet<String>, Box<dyn std::error::Error>> {
     let xs = get_queries().await?;
-    let mut ids = HashSet::<String>::new();
+    let mut ids = get_watchs().await?;
     let keys = vec![
         env::var("DEVELOPER_KEY0")?,
         env::var("DEVELOPER_KEY1")?,
@@ -291,6 +292,56 @@ async fn write_blacklist(blacklist: HashSet<String>) -> Result<(), Box<dyn std::
         }
     }
     Ok(())
+}
+
+#[derive(Deserialize, Debug)]
+#[allow(non_snake_case)]
+struct Request {
+    totalResults: String,
+    count: i32,
+    startIndex: i32,
+}
+
+#[derive(Deserialize, Debug)]
+struct Queries {
+    request: Vec<Request>,
+}
+
+#[derive(Deserialize, Debug)]
+struct SnippetItem {
+    snippet: String,
+}
+
+#[derive(Deserialize, Debug)]
+struct Watches {
+    queries: Queries,
+    items: Vec<SnippetItem>,
+}
+
+async fn get_watchs() -> Result<HashSet<String>, Box<dyn std::error::Error>> {
+    let mut set = HashSet::<String>::new();
+    let mut start = 1;
+    loop {
+        let url = env::var("WATCH_URL")?.to_owned() + &start.to_string();
+        let body = reqwest::get(url).await?.json::<Watches>().await?;
+        let re = Regex::new(r"www\.youtube\.com/watch\?v=(.{11})").unwrap();
+        for item in body.items {
+            if let Some(caps) = re.captures(&item.snippet) {
+                if let Some(s) = caps.get(1) {
+                    set.insert(s.as_str().to_string());
+                }
+            }
+        }
+        let request = &body.queries.request[0];
+        let total: i32 = request.totalResults.parse().unwrap();
+        let next = request.startIndex + request.count;
+        if next > total {
+            break;
+        } else {
+            start = next;
+        }
+    }
+    Ok(set)
 }
 
 #[tokio::main]
