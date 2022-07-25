@@ -78,6 +78,7 @@ async fn get_id_list() -> Result<HashSet<String>, Box<dyn std::error::Error>> {
         env::var("DEVELOPER_KEY0")?,
         env::var("DEVELOPER_KEY1")?,
         env::var("DEVELOPER_KEY2")?,
+        env::var("DEVELOPER_KEY3")?,
     ];
     let mut i = 0;
     let total = xs.len();
@@ -346,48 +347,51 @@ async fn get_watchs() -> Result<HashSet<String>, Box<dyn std::error::Error>> {
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let mut blacklist = get_blacklist().await?;
+    let args = env::args();
     let mut locations = get_previous_id_list().await?;
-    let key = env::var("DEVELOPER_KEY2")?;
+    let key = env::var("DEVELOPER_KEY3")?;
     remove_garbage(&key, &mut locations).await;
-    let ids = get_id_list().await?;
-    let total = ids.len();
-    let mut undefined = HashSet::<&str>::new();
-    for (count, id) in ids.iter().enumerate() {
-        println!("location {}/{}", count, total);
-        if blacklist.contains(id) {
-            continue;
-        }
-        if locations.contains_key(id) {
-            continue;
-        }
-        match get_location(id, &key).await {
-            Ok(location) => {
-                println!("location found");
-                locations.insert(id.to_string(), location);
+    if args.len() == 1 {
+        let ids = get_id_list().await?;
+        let total = ids.len();
+        let mut blacklist = get_blacklist().await?;
+        let mut undefined = HashSet::<&str>::new();
+        for (count, id) in ids.iter().enumerate() {
+            println!("location {}/{}", count, total);
+            if blacklist.contains(id) {
+                continue;
             }
-            Err(_) => {
-                println!("location not found");
-                undefined.insert(id);
+            if locations.contains_key(id) {
+                continue;
             }
-        }
-    }
-    let google_maps_client = ClientSettings::new(&env::var("GOOGLE_API_KEY")?);
-    let total = undefined.len();
-    for (count, id) in undefined.into_iter().enumerate() {
-        println!("location {}/{}", count, total);
-        match get_location2(id, &google_maps_client).await {
-            Ok(location) => {
-                println!("location2 found");
-                locations.insert(id.to_string(), location);
-            }
-            Err(_) => {
-                println!("location2 not found");
-                blacklist.insert(id.to_string());
+            match get_location(id, &key).await {
+                Ok(location) => {
+                    println!("location found");
+                    locations.insert(id.to_string(), location);
+                }
+                Err(_) => {
+                    println!("location not found");
+                    undefined.insert(id);
+                }
             }
         }
+        let google_maps_client = ClientSettings::new(&env::var("GOOGLE_API_KEY")?);
+        let total = undefined.len();
+        for (count, id) in undefined.into_iter().enumerate() {
+            println!("location {}/{}", count, total);
+            match get_location2(id, &google_maps_client).await {
+                Ok(location) => {
+                    println!("location2 found");
+                    locations.insert(id.to_string(), location);
+                }
+                Err(_) => {
+                    println!("location2 not found");
+                    blacklist.insert(id.to_string());
+                }
+            }
+        }
+        write_blacklist(blacklist).await?;
     }
     write_geo(locations).await?;
-    write_blacklist(blacklist).await?;
     Ok(())
 }
