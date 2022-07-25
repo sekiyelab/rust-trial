@@ -24,15 +24,19 @@ jobs:
           DEVELOPER_KEY0: ${{ secrets.DEVELOPER_KEY0 }}
           DEVELOPER_KEY1: ${{ secrets.DEVELOPER_KEY1 }}
           DEVELOPER_KEY2: ${{ secrets.DEVELOPER_KEY2 }}
+          DEVELOPER_KEY3: ${{ secrets.DEVELOPER_KEY3 }}
           GOOGLE_API_KEY: ${{ secrets.GOOGLE_API_KEY }}
           QUERY_URL_BASE: ${{ secrets.QUERY_URL_BASE }}
           LOCATION_URL_BASE: ${{ secrets.LOCATION_URL_BASE }}
+          LIVE_URL_BASE: ${{ secrets.LIVE_URL_BASE }}
           INFO_URL_BASE: ${{ secrets.INFO_URL_BASE }}
           DATA_URL: ${{ secrets.DATA_URL }}
           QUERIES_URL: ${{ secrets.QUERIES_URL }}
+          BLACKLIST_URL: ${{ secrets.BLACKLIST_URL }}
+          WATCH_URL: ${{ secrets.WATCH_URL }}
         with:
           command: run
-          args: --bin=rust-trial --package=rust-trial --manifest-path=Cargo.toml --message-format=json
+          args: --bin=rust-trial --package=rust-trial --manifest-path=Cargo.toml --message-format=json remove_only
       - uses: montudor/action-zip@v1
         with:
           args: zip -qq -e --password="${{ secrets.ZIP_PASSWORD }}" geo.csv.gz.zip geo.csv.gz
