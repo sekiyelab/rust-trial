@@ -323,6 +323,7 @@ async fn get_watchs() -> Result<HashSet<String>, Box<dyn std::error::Error>> {
     let mut set = HashSet::<String>::new();
     let mut start = 1;
     loop {
+        println!("get_watchs: start = {}", start);
         let url = env::var("WATCH_URL")?.to_owned() + &start.to_string();
         let body = reqwest::get(url).await?.json::<Watches>().await?;
         let re = Regex::new(r"www\.youtube\.com/watch\?v=(.{11})").unwrap();
