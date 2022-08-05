@@ -338,6 +338,8 @@ async fn get_watchs() -> Result<HashSet<String>, Box<dyn std::error::Error>> {
         let next = request.startIndex + request.count;
         if next > total {
             break;
+        } if next > 100 {
+            break;
         } else {
             start = next;
         }
