@@ -349,9 +349,9 @@ dependencies = [
 
 [[package]]
 name = "google_maps"
-version = "2.1.7"
+version = "3.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "298615df2c8f131a656708d3f977286ef600292d28fbec52c5a338791bc75949"
+checksum = "ddf8d7d21d9b5295a99b58740232608951de0b1888e15197e15c1edbaa943d31"
 dependencies = [
  "backoff",
  "chrono",
