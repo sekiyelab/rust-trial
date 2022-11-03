@@ -38,6 +38,14 @@ jobs:
         with:
           command: run
           args: --bin=rust-trial --package=rust-trial --manifest-path=Cargo.toml --message-format=json
+      - id: "auth"
+        uses: "google-github-actions/auth@v0"
+        with:
+          credentials_json: "${{ secrets.GCP_CREDENTIALS }}"
+      - name: "Set up Cloud SDK"
+        uses: "google-github-actions/setup-gcloud@v0"
+      - name: "Upload files"
+        run: "gcloud storage cp geo.csv.gz blacklist.csv.gz gs://livecameramap-54d8d.appspot.com"
       - uses: montudor/action-zip@v1
         with:
           args: zip -qq -e --password="${{ secrets.ZIP_PASSWORD }}" geo.csv.gz.zip geo.csv.gz
