@@ -353,6 +353,7 @@ async fn get_watchs() -> Result<HashSet<String>, Box<dyn std::error::Error>> {
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args = env::args();
     let mut locations = get_previous_id_list().await?;
+    let current_count = locations.len();
     let key = env::var("DEVELOPER_KEY3")?;
     remove_garbage(&key, &mut locations).await;
     if args.len() == 1 {
@@ -395,6 +396,18 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             }
         }
         write_blacklist(blacklist).await?;
+    }
+    if locations.len() < current_count / 2 {
+        println!(
+            "new count of locations is too small: {} < {} / 2",
+            locations.len(),
+            current_count
+        );
+        let err: Result<(), Box<dyn std::error::Error>> = Err(Box::new(std::io::Error::new(
+            std::io::ErrorKind::Other,
+            "new count of locations is too small",
+        )));
+        return err;
     }
     write_geo(locations).await?;
     Ok(())
