@@ -237,19 +237,25 @@ async fn is_live(id: &str, key: &str) -> bool {
         Ok(url_base) => {
             let url = url_base + "&key=" + key + "&id=" + id;
             match reqwest::get(url).await {
-                Ok(response) => match response.json::<VideoResult2>().await {
-                    Ok(body) => {
-                        if !body.items.is_empty() {
-                            &body.items[0].snippet.liveBroadcastContent == "live"
-                        } else {
+                Ok(response) => {
+                    if response.status().as_u16() == 403 {
+                        eprintln!("exceeded youtube quota");
+                        std::process::exit(1);
+                    }
+                    match response.json::<VideoResult2>().await {
+                        Ok(body) => {
+                            if !body.items.is_empty() {
+                                &body.items[0].snippet.liveBroadcastContent == "live"
+                            } else {
+                                false
+                            }
+                        }
+                        Err(err) => {
+                            eprintln!("{}", err);
                             false
                         }
                     }
-                    Err(err) => {
-                        eprintln!("{}", err);
-                        false
-                    }
-                },
+                }
                 Err(err) => {
                     eprintln!("{}", err);
                     false
