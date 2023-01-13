@@ -195,10 +195,16 @@ async fn get_location2(id: &str, client: &ClientSettings) -> Result<(f64, f64), 
                     )),
                     None => Err(address),
                 },
-                Err(_) => Err(address),
+                Err(err) => {
+                    eprintln!("{}", err);
+                    Err(address)
+                }
             }
         }
-        Err(_) => Err("".to_string()),
+        Err(err) => {
+            eprintln!("{}", err);
+            Err("".to_string())
+        }
     }
 }
 
@@ -239,12 +245,21 @@ async fn is_live(id: &str, key: &str) -> bool {
                             false
                         }
                     }
-                    Err(_) => false,
+                    Err(err) => {
+                        eprintln!("{}", err);
+                        false
+                    }
                 },
-                Err(_) => false,
+                Err(err) => {
+                    eprintln!("{}", err);
+                    false
+                }
             }
         }
-        Err(_) => false,
+        Err(err) => {
+            eprintln!("{}", err);
+            false
+        }
     }
 }
 
