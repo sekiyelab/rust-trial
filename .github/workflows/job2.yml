@@ -45,7 +45,7 @@ jobs:
       - name: "Set up Cloud SDK"
         uses: "google-github-actions/setup-gcloud@v1"
       - name: "Upload files"
-        run: "gcloud storage cp geo.csv.gz blacklist.txt.gz gs://livecameramap-54d8d.appspot.com"
+        run: "gcloud storage cp geo.csv.gz blacklist.txt.gz non_live_camera.txt.gz gs://livecameramap-54d8d.appspot.com"
       - uses: montudor/action-zip@v1
         with:
           args: zip -qq -e --password="${{ secrets.ZIP_PASSWORD }}" geo.csv.gz.zip geo.csv.gz

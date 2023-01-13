@@ -183,24 +183,23 @@ async fn get_info(id: &str) -> Result<[String; 2], Box<dyn std::error::Error>> {
     Ok([body.title, body.author_name])
 }
 
-async fn get_location2(
-    id: &str,
-    client: &ClientSettings,
-) -> Result<(f64, f64), Box<dyn std::error::Error>> {
-    let info = get_info(id).await?;
-    for address in info {
-        let location = client.geocoding().with_address(&address).execute().await?;
-        match location.results.first() {
-            Some(result) => {
-                return Ok((
-                    result.geometry.location.lat.to_f64().unwrap(),
-                    result.geometry.location.lng.to_f64().unwrap(),
-                ));
+async fn get_location2(id: &str, client: &ClientSettings) -> Result<(f64, f64), String> {
+    match get_info(id).await {
+        Ok(info) => {
+            let address = info.join(" ");
+            match client.geocoding().with_address(&address).execute().await {
+                Ok(location) => match location.results.first() {
+                    Some(result) => Ok((
+                        result.geometry.location.lat.to_f64().unwrap(),
+                        result.geometry.location.lng.to_f64().unwrap(),
+                    )),
+                    None => Err(address),
+                },
+                Err(_) => Err(address),
             }
-            None => continue,
         }
+        Err(_) => Err("".to_string()),
     }
-    Err(Box::new(MyError("location not found".into())))
 }
 
 #[derive(Debug, Serialize)]
@@ -280,8 +279,11 @@ async fn write_geo(
     Ok(())
 }
 
-async fn write_blacklist(blacklist: HashSet<String>) -> Result<(), Box<dyn std::error::Error>> {
-    let file = File::create("blacklist.txt.gz")?;
+async fn write_hash_set(
+    blacklist: HashSet<String>,
+    filename: &str,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let file = File::create(filename)?;
     let mut encoder = GzEncoder::new(file, Compression::default());
     for id in blacklist {
         match encoder.write_fmt(format_args!("{id}\n")) {
@@ -361,6 +363,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         let total = ids.len();
         let mut blacklist = get_blacklist().await?;
         let mut undefined = HashSet::<&str>::new();
+        let mut non_live_camera = HashSet::<String>::new();
         for (count, id) in ids.iter().enumerate() {
             println!("location {}/{}", count, total);
             if blacklist.contains(id) {
@@ -389,13 +392,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     println!("location2 found");
                     locations.insert(id.to_string(), location);
                 }
-                Err(_) => {
+                Err(info) => {
                     println!("location2 not found");
                     blacklist.insert(id.to_string());
+                    non_live_camera.insert(info);
                 }
             }
         }
-        write_blacklist(blacklist).await?;
+        write_hash_set(blacklist, "blacklist.txt.gz").await?;
+        write_hash_set(non_live_camera, "non_live_camera.txt.gz").await?;
     }
     if locations.len() < current_count / 2 {
         println!(
