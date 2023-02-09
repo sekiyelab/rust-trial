@@ -83,7 +83,7 @@ async fn get_id_list() -> Result<HashSet<String>, Box<dyn std::error::Error>> {
     let mut i = 0;
     let total = xs.len();
     for (count, query) in xs.into_iter().enumerate() {
-        println!("search {}/{}", count, total);
+        println!("search {count}/{total}");
         loop {
             match search(&query, &keys[i]).await {
                 Ok(ret) => {
@@ -91,7 +91,7 @@ async fn get_id_list() -> Result<HashSet<String>, Box<dyn std::error::Error>> {
                     break;
                 }
                 Err(err) => {
-                    eprintln!("{}", err);
+                    eprintln!("{err}");
                     i += 1;
                     if i == keys.len() {
                         return Ok(ids);
@@ -196,13 +196,13 @@ async fn get_location2(id: &str, client: &ClientSettings) -> Result<(f64, f64), 
                     None => Err(address),
                 },
                 Err(err) => {
-                    eprintln!("{}", err);
+                    eprintln!("{err}");
                     Err(address)
                 }
             }
         }
         Err(err) => {
-            eprintln!("{}", err);
+            eprintln!("{err}");
             Err("".to_string())
         }
     }
@@ -251,19 +251,19 @@ async fn is_live(id: &str, key: &str) -> bool {
                             }
                         }
                         Err(err) => {
-                            eprintln!("{}", err);
+                            eprintln!("{err}");
                             false
                         }
                     }
                 }
                 Err(err) => {
-                    eprintln!("{}", err);
+                    eprintln!("{err}");
                     false
                 }
             }
         }
         Err(err) => {
-            eprintln!("{}", err);
+            eprintln!("{err}");
             false
         }
     }
@@ -272,7 +272,8 @@ async fn is_live(id: &str, key: &str) -> bool {
 async fn remove_garbage(key: &str, locations: &mut HashMap<String, (f64, f64)>) {
     let mut v: Vec<String> = vec![];
     for (count, (id, _)) in locations.iter().enumerate() {
-        println!("checking {}/{}", count, locations.len());
+        let locations_len = locations.len();
+        println!("checking {count}/{locations_len}");
         if !is_live(id, key).await {
             println!("invalid");
             v.push(id.to_string());
@@ -346,7 +347,7 @@ async fn get_watchs() -> Result<HashSet<String>, Box<dyn std::error::Error>> {
     let mut set = HashSet::<String>::new();
     let mut start = 1;
     loop {
-        println!("get_watchs: start = {}", start);
+        println!("get_watchs: start = {start}");
         let url = env::var("WATCH_URL")?.to_owned() + &start.to_string();
         let body = reqwest::get(url).await?.json::<Watches>().await?;
         let re = Regex::new(r"www\.youtube\.com/watch\?v=(.{11})").unwrap();
@@ -386,7 +387,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         let mut undefined = HashSet::<&str>::new();
         let mut non_live_camera = HashSet::<String>::new();
         for (count, id) in ids.iter().enumerate() {
-            println!("location {}/{}", count, total);
+            println!("location {count}/{total}");
             if blacklist.contains(id) {
                 continue;
             }
@@ -407,7 +408,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         let google_maps_client = ClientSettings::new(&env::var("GOOGLE_API_KEY")?);
         let total = undefined.len();
         for (count, id) in undefined.into_iter().enumerate() {
-            println!("location {}/{}", count, total);
+            println!("location {count}/{total}");
             match get_location2(id, &google_maps_client).await {
                 Ok(location) => {
                     println!("location2 found");
@@ -424,11 +425,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         write_hash_set(non_live_camera, "non_live_camera.txt.gz").await?;
     }
     if locations.len() < current_count / 2 {
-        println!(
-            "new count of locations is too small: {} < {} / 2",
-            locations.len(),
-            current_count
-        );
+        let locations_len = locations.len();
+        println!("new count of locations is too small: {locations_len} < {current_count} / 2");
         let err: Result<(), Box<dyn std::error::Error>> = Err(Box::new(std::io::Error::new(
             std::io::ErrorKind::Other,
             "new count of locations is too small",
