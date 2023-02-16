@@ -378,7 +378,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args = env::args();
     let mut locations = get_previous_id_list().await?;
     let current_count = locations.len();
-    let key = env::var("DEVELOPER_KEY3")?;
+    let key = env::var("DEVELOPER_KEY4")?;
     remove_garbage(&key, &mut locations).await;
     if args.len() == 1 {
         let ids = get_id_list().await?;
