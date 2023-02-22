@@ -26,6 +26,7 @@ jobs:
           DEVELOPER_KEY1: ${{ secrets.DEVELOPER_KEY1 }}
           DEVELOPER_KEY2: ${{ secrets.DEVELOPER_KEY2 }}
           DEVELOPER_KEY3: ${{ secrets.DEVELOPER_KEY3 }}
+          DEVELOPER_KEY4: ${{ secrets.DEVELOPER_KEY4 }}
           GOOGLE_API_KEY: ${{ secrets.GOOGLE_API_KEY }}
           QUERY_URL_BASE: ${{ secrets.QUERY_URL_BASE }}
           LOCATION_URL_BASE: ${{ secrets.LOCATION_URL_BASE }}
