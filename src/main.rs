@@ -155,8 +155,9 @@ impl fmt::Display for MyError {
 
 impl std::error::Error for MyError {}
 
-async fn get_location(id: &str, key: &str) -> Result<(f64, f64), Box<dyn std::error::Error>> {
-    let url = env::var("LOCATION_URL_BASE")? + "&key=" + key + "&id=" + id;
+async fn get_location(id: &str) -> Result<(f64, f64), Box<dyn std::error::Error>> {
+    let key = env::var("DEVELOPER_KEY4")?;
+    let url = env::var("LOCATION_URL_BASE")? + "&key=" + &key + "&id=" + id;
     let body = reqwest::get(url).await?.json::<VideoResult>().await?;
     if !body.items.is_empty() {
         let location = &body.items[0].recordingDetails.location;
@@ -232,15 +233,17 @@ struct VideoResult2 {
     items: Vec<VideoItem2>,
 }
 
-async fn is_live(id: &str, key: &str) -> bool {
+async fn is_live(id: &str, keys: &[String], i: &mut usize) -> bool {
+    let key = &keys[*i];
     match env::var("LIVE_URL_BASE") {
         Ok(url_base) => {
             let url = url_base + "&key=" + key + "&id=" + id;
             match reqwest::get(url).await {
                 Ok(response) => {
                     if response.status().as_u16() == 403 {
-                        eprintln!("exceeded youtube quota");
-                        std::process::exit(1);
+                        eprintln!("exceeded youtube quota (index: {i}");
+                        *i += 1;
+                        return true;
                     }
                     match response.json::<VideoResult2>().await {
                         Ok(body) => {
@@ -269,12 +272,22 @@ async fn is_live(id: &str, key: &str) -> bool {
     }
 }
 
-async fn remove_garbage(key: &str, locations: &mut HashMap<String, (f64, f64)>) {
+async fn remove_garbage(
+    locations: &mut HashMap<String, (f64, f64)>,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let keys = vec![
+        env::var("DEVELOPER_KEY4")?,
+        env::var("DEVELOPER_KEY3")?,
+        env::var("DEVELOPER_KEY2")?,
+        env::var("DEVELOPER_KEY1")?,
+        env::var("DEVELOPER_KEY0")?,
+    ];
+    let mut i = 0;
     let mut v: Vec<String> = vec![];
     for (count, (id, _)) in locations.iter().enumerate() {
         let locations_len = locations.len();
         println!("checking {count}/{locations_len}");
-        if !is_live(id, key).await {
+        if !is_live(id, &keys, &mut i).await {
             println!("invalid");
             v.push(id.to_string());
         }
@@ -282,6 +295,7 @@ async fn remove_garbage(key: &str, locations: &mut HashMap<String, (f64, f64)>) 
     for id in v {
         locations.remove(&id);
     }
+    Ok(())
 }
 
 async fn write_geo(
@@ -378,8 +392,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args = env::args();
     let mut locations = get_previous_id_list().await?;
     let current_count = locations.len();
-    let key = env::var("DEVELOPER_KEY4")?;
-    remove_garbage(&key, &mut locations).await;
+    remove_garbage(&mut locations).await?;
     if args.len() == 1 {
         let ids = get_id_list().await?;
         let total = ids.len();
@@ -394,7 +407,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             if locations.contains_key(id) {
                 continue;
             }
-            match get_location(id, &key).await {
+            match get_location(id).await {
                 Ok(location) => {
                     println!("location found");
                     locations.insert(id.to_string(), location);
