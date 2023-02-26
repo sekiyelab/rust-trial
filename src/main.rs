@@ -12,9 +12,37 @@ use std::collections::HashMap;
 use std::collections::HashSet;
 use std::default::Default;
 use std::env;
-use std::fmt;
 use std::fs::File;
 use std::io::prelude::*;
+
+async fn get(url: String) -> Result<reqwest::Response, Box<dyn std::error::Error>> {
+    let keys = vec![
+        env::var("DEVELOPER_KEY0")?,
+        env::var("DEVELOPER_KEY1")?,
+        env::var("DEVELOPER_KEY2")?,
+        env::var("DEVELOPER_KEY3")?,
+        env::var("DEVELOPER_KEY4")?,
+    ];
+    static mut CURRENT_INDEX: usize = 0;
+    let key: &str;
+    unsafe {
+        key = &keys[CURRENT_INDEX];
+    }
+    let url = url.to_owned() + "&key=" + key;
+    unsafe {
+        CURRENT_INDEX = (CURRENT_INDEX + 1) % keys.len();
+    }
+    match reqwest::get(url).await {
+        Ok(response) => {
+            if response.status().as_u16() == 403 {
+                Err("exceeded youtube quota".into())
+            } else {
+                Ok(response)
+            }
+        }
+        Err(err) => Err(Box::new(err) as Box<dyn std::error::Error>),
+    }
+}
 
 #[derive(Deserialize, Debug)]
 #[allow(non_snake_case)]
@@ -32,12 +60,14 @@ struct SearchResult {
     items: Vec<Item>,
 }
 
-async fn search(query: &str, key: &str) -> Result<HashSet<String>, Box<dyn std::error::Error>> {
+async fn search(query: &str) -> Result<HashSet<String>, Box<dyn std::error::Error>> {
     let mut xs = HashSet::new();
-    let url = env::var("QUERY_URL_BASE")? + "&key=" + key + "&q=" + query;
-    let body = reqwest::get(url).await?.json::<SearchResult>().await?;
-    for item in body.items {
-        xs.insert(item.id.videoId);
+    let url = env::var("QUERY_URL_BASE")? + "&q=" + query;
+    let response = get(url).await?;
+    if let Ok(body) = response.json::<SearchResult>().await {
+        for item in body.items {
+            xs.insert(item.id.videoId);
+        }
     }
     println!("search succeeded");
     Ok(xs)
@@ -74,33 +104,10 @@ async fn get_blacklist() -> Result<HashSet<String>, Box<dyn std::error::Error>> 
 async fn get_id_list() -> Result<HashSet<String>, Box<dyn std::error::Error>> {
     let xs = get_queries().await?;
     let mut ids = get_watchs().await?;
-    let keys = vec![
-        env::var("DEVELOPER_KEY0")?,
-        env::var("DEVELOPER_KEY1")?,
-        env::var("DEVELOPER_KEY2")?,
-        env::var("DEVELOPER_KEY3")?,
-        env::var("DEVELOPER_KEY4")?,
-    ];
-    let mut i = 0;
     let total = xs.len();
     for (count, query) in xs.into_iter().enumerate() {
         println!("search {count}/{total}");
-        loop {
-            match search(&query, &keys[i]).await {
-                Ok(ret) => {
-                    ids.extend(ret);
-                    break;
-                }
-                Err(err) => {
-                    eprintln!("{err}");
-                    i += 1;
-                    if i == keys.len() {
-                        return Ok(ids);
-                    }
-                    eprintln!("try next key");
-                }
-            }
-        }
+        ids.extend(search(&query).await?);
     }
     Ok(ids)
 }
@@ -145,32 +152,47 @@ struct VideoResult {
     items: Vec<VideoItem>,
 }
 
-#[derive(Debug)]
-struct MyError(String);
-
-impl fmt::Display for MyError {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "There is an error: {}", self.0)
+async fn get_location_from_youtube(id: &str) -> Result<(f64, f64), Box<dyn std::error::Error>> {
+    let url = env::var("LOCATION_URL_BASE")? + "&id=" + id;
+    let response = get(url).await?;
+    match response.json::<VideoResult>().await {
+        Ok(body) => {
+            if !body.items.is_empty() {
+                let location = &body.items[0].recordingDetails.location;
+                Ok((location.latitude, location.longitude))
+            } else {
+                Ok((0.0, 0.0))
+            }
+        }
+        Err(_) => Ok((0.0, 0.0)),
     }
 }
 
-impl std::error::Error for MyError {}
-
-async fn get_location(id: &str) -> Result<(f64, f64), Box<dyn std::error::Error>> {
-    let key = env::var("DEVELOPER_KEY4")?;
-    let url = env::var("LOCATION_URL_BASE")? + "&key=" + &key + "&id=" + id;
-    let body = reqwest::get(url).await?.json::<VideoResult>().await?;
-    if !body.items.is_empty() {
-        let location = &body.items[0].recordingDetails.location;
-        let ret = (location.latitude, location.longitude);
-        if ret == (0.0, 0.0) {
-            Err(Box::new(MyError("location not found".into())))
+async fn get_locations_from_youtube(
+    ids: HashSet<&String>,
+) -> Result<(HashMap<String, (f64, f64)>, HashSet<String>), Box<dyn std::error::Error>> {
+    let mut locations = HashMap::<String, (f64, f64)>::new();
+    let mut undefined = HashSet::<String>::new();
+    let total = ids.len();
+    for (count, &id) in ids.iter().enumerate() {
+        println!("location_from_youtube {count}/{total}");
+        let location = get_location_from_youtube(id).await?;
+        if location != (0.0, 0.0) {
+            println!("location_from_youtube found");
+            locations.insert(id.to_string(), location);
         } else {
-            Ok(ret)
+            println!("location_from_youtube not found");
+            undefined.insert(id.to_string());
         }
-    } else {
-        Err(Box::new(MyError("location not found".into())))
     }
+    Ok((locations, undefined))
+}
+
+fn remove_hashmap_keys_from_hashset<K, V>(hash_set: &mut HashSet<&K>, hash_map: &HashMap<K, V>)
+where
+    K: Eq + std::hash::Hash,
+{
+    hash_set.retain(|key| !hash_map.contains_key(key));
 }
 
 #[derive(Deserialize, Debug)]
@@ -185,7 +207,7 @@ async fn get_info(id: &str) -> Result<[String; 2], Box<dyn std::error::Error>> {
     Ok([body.title, body.author_name])
 }
 
-async fn get_location2(id: &str, client: &ClientSettings) -> Result<(f64, f64), String> {
+async fn get_location_from_map(id: &str, client: &ClientSettings) -> Result<(f64, f64), String> {
     match get_info(id).await {
         Ok(info) => {
             let address = info.join(" ");
@@ -208,6 +230,32 @@ async fn get_location2(id: &str, client: &ClientSettings) -> Result<(f64, f64), 
             Err("".to_string())
         }
     }
+}
+
+async fn get_locations_from_map(
+    ids: HashSet<String>,
+) -> Result<(HashMap<String, (f64, f64)>, HashSet<String>), Box<dyn std::error::Error>> {
+    let google_maps_client = ClientSettings::new(&env::var("GOOGLE_API_KEY")?);
+    let total = ids.len();
+    let mut blacklist = HashSet::<String>::new();
+    let mut non_live_camera = HashSet::<String>::new();
+    let mut locations = HashMap::<String, (f64, f64)>::new();
+    for (count, id) in ids.into_iter().enumerate() {
+        println!("location_from_map {count}/{total}");
+        match get_location_from_map(&id, &google_maps_client).await {
+            Ok(location) => {
+                println!("location_from_map found");
+                locations.insert(id.to_string(), location);
+            }
+            Err(info) => {
+                println!("location_from_map not found");
+                blacklist.insert(id.to_string());
+                non_live_camera.insert(info);
+            }
+        }
+    }
+    write_hash_set(non_live_camera, "non_live_camera.txt.gz").await?;
+    Ok((locations, blacklist))
 }
 
 #[derive(Debug, Serialize)]
@@ -234,58 +282,31 @@ struct VideoResult2 {
     items: Vec<VideoItem2>,
 }
 
-async fn is_live(id: &str, key: &str) -> Result<bool, Box<dyn std::error::Error>> {
-    let url = env::var("LIVE_URL_BASE")? + "&key=" + key + "&id=" + id;
-    let response = reqwest::get(url).await?;
-    if response.status().as_u16() == 403 {
-        println!("exceeded youtube quota");
-        return Ok(false);
-    }
-    let body = response.json::<VideoResult2>().await?;
-    if !body.items.is_empty() {
-        if &body.items[0].snippet.liveBroadcastContent == "live" {
-            Ok(true)
-        } else {
-            Err("not live".into())
+async fn is_live(id: &str) -> Result<bool, Box<dyn std::error::Error>> {
+    let url = env::var("LIVE_URL_BASE")? + "&id=" + id;
+    let response = get(url).await?;
+    match response.json::<VideoResult2>().await {
+        Ok(body) => {
+            if !body.items.is_empty() {
+                Ok(&body.items[0].snippet.liveBroadcastContent == "live")
+            } else {
+                Ok(false)
+            }
         }
-    } else {
-        Err("body is empty".into())
+        Err(_) => Ok(false),
     }
 }
 
 async fn remove_garbage(
     locations: &mut HashMap<String, (f64, f64)>,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    let keys = vec![
-        env::var("DEVELOPER_KEY4")?,
-        env::var("DEVELOPER_KEY3")?,
-        env::var("DEVELOPER_KEY2")?,
-        env::var("DEVELOPER_KEY1")?,
-        env::var("DEVELOPER_KEY0")?,
-    ];
-    let mut i = 0;
     let mut v: Vec<String> = vec![];
     for (count, (id, _)) in locations.iter().enumerate() {
         let locations_len = locations.len();
         println!("checking {count}/{locations_len}");
-        loop {
-            match is_live(id, &keys[i]).await {
-                Ok(p) => {
-                    if p {
-                        break;
-                    } else {
-                        i += 1;
-                        if i >= keys.len() {
-                            return Err("ran out of keys".into());
-                        }
-                    }
-                }
-                Err(err) => {
-                    println!("invalid: {err}");
-                    v.push(id.to_string());
-                    break;
-                }
-            }
+        if !is_live(id).await? {
+            println!("invalid");
+            v.push(id.to_string());
         }
     }
     for id in v {
@@ -391,56 +412,22 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     remove_garbage(&mut locations).await?;
     if args.len() == 1 {
         let ids = get_id_list().await?;
-        let total = ids.len();
         let mut blacklist = get_blacklist().await?;
-        let mut undefined = HashSet::<&str>::new();
-        let mut non_live_camera = HashSet::<String>::new();
-        for (count, id) in ids.iter().enumerate() {
-            println!("location {count}/{total}");
-            if blacklist.contains(id) {
-                continue;
-            }
-            if locations.contains_key(id) {
-                continue;
-            }
-            match get_location(id).await {
-                Ok(location) => {
-                    println!("location found");
-                    locations.insert(id.to_string(), location);
-                }
-                Err(_) => {
-                    println!("location not found");
-                    undefined.insert(id);
-                }
-            }
-        }
-        let google_maps_client = ClientSettings::new(&env::var("GOOGLE_API_KEY")?);
-        let total = undefined.len();
-        for (count, id) in undefined.into_iter().enumerate() {
-            println!("location {count}/{total}");
-            match get_location2(id, &google_maps_client).await {
-                Ok(location) => {
-                    println!("location2 found");
-                    locations.insert(id.to_string(), location);
-                }
-                Err(info) => {
-                    println!("location2 not found");
-                    blacklist.insert(id.to_string());
-                    non_live_camera.insert(info);
-                }
-            }
-        }
+        let mut ids = ids.difference(&blacklist).collect::<HashSet<&String>>();
+        remove_hashmap_keys_from_hashset(&mut ids, &locations);
+        let (locations_from_youtube, ids) = get_locations_from_youtube(ids).await?;
+        locations.extend(locations_from_youtube);
+
+        let (locations_from_map, ids) = get_locations_from_map(ids).await?;
+        locations.extend(locations_from_map);
+        blacklist.extend(ids);
+
         write_hash_set(blacklist, "blacklist.txt.gz").await?;
-        write_hash_set(non_live_camera, "non_live_camera.txt.gz").await?;
     }
     if locations.len() < current_count / 2 {
         let locations_len = locations.len();
         println!("new count of locations is too small: {locations_len} < {current_count} / 2");
-        let err: Result<(), Box<dyn std::error::Error>> = Err(Box::new(std::io::Error::new(
-            std::io::ErrorKind::Other,
-            "new count of locations is too small",
-        )));
-        return err;
+        return Err("new count of locations is too small".into());
     }
     write_geo(locations).await?;
     Ok(())
