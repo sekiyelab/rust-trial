@@ -79,6 +79,7 @@ async fn get_id_list() -> Result<HashSet<String>, Box<dyn std::error::Error>> {
         env::var("DEVELOPER_KEY1")?,
         env::var("DEVELOPER_KEY2")?,
         env::var("DEVELOPER_KEY3")?,
+        env::var("DEVELOPER_KEY4")?,
     ];
     let mut i = 0;
     let total = xs.len();
@@ -233,42 +234,22 @@ struct VideoResult2 {
     items: Vec<VideoItem2>,
 }
 
-async fn is_live(id: &str, keys: &[String], i: &mut usize) -> bool {
-    let key = &keys[*i];
-    match env::var("LIVE_URL_BASE") {
-        Ok(url_base) => {
-            let url = url_base + "&key=" + key + "&id=" + id;
-            match reqwest::get(url).await {
-                Ok(response) => {
-                    if response.status().as_u16() == 403 {
-                        eprintln!("exceeded youtube quota (index: {i}");
-                        *i += 1;
-                        return true;
-                    }
-                    match response.json::<VideoResult2>().await {
-                        Ok(body) => {
-                            if !body.items.is_empty() {
-                                &body.items[0].snippet.liveBroadcastContent == "live"
-                            } else {
-                                false
-                            }
-                        }
-                        Err(err) => {
-                            eprintln!("{err}");
-                            false
-                        }
-                    }
-                }
-                Err(err) => {
-                    eprintln!("{err}");
-                    false
-                }
-            }
+async fn is_live(id: &str, key: &str) -> Result<bool, Box<dyn std::error::Error>> {
+    let url = env::var("LIVE_URL_BASE")? + "&key=" + key + "&id=" + id;
+    let response = reqwest::get(url).await?;
+    if response.status().as_u16() == 403 {
+        println!("exceeded youtube quota");
+        return Ok(false);
+    }
+    let body = response.json::<VideoResult2>().await?;
+    if !body.items.is_empty() {
+        if &body.items[0].snippet.liveBroadcastContent == "live" {
+            Ok(true)
+        } else {
+            Err("not live".into())
         }
-        Err(err) => {
-            eprintln!("{err}");
-            false
-        }
+    } else {
+        Err("body is empty".into())
     }
 }
 
@@ -287,9 +268,24 @@ async fn remove_garbage(
     for (count, (id, _)) in locations.iter().enumerate() {
         let locations_len = locations.len();
         println!("checking {count}/{locations_len}");
-        if !is_live(id, &keys, &mut i).await {
-            println!("invalid");
-            v.push(id.to_string());
+        loop {
+            match is_live(id, &keys[i]).await {
+                Ok(p) => {
+                    if p {
+                        break;
+                    } else {
+                        i += 1;
+                        if i >= keys.len() {
+                            return Err("ran out of keys".into());
+                        }
+                    }
+                }
+                Err(err) => {
+                    println!("invalid: {err}");
+                    v.push(id.to_string());
+                    break;
+                }
+            }
         }
     }
     for id in v {
