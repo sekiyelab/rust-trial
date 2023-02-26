@@ -203,7 +203,7 @@ struct VideoInfo {
 
 async fn get_info(id: &str) -> Result<[String; 2], Box<dyn std::error::Error>> {
     let url = env::var("INFO_URL_BASE")? + "?v=" + id + "&format=json";
-    let body = reqwest::get(url).await?.json::<VideoInfo>().await?;
+    let body = get(url).await?.json::<VideoInfo>().await?;
     Ok([body.title, body.author_name])
 }
 
