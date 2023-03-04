@@ -207,10 +207,33 @@ async fn get_info(id: &str) -> Result<[String; 2], Box<dyn std::error::Error>> {
     Ok([body.title, body.author_name])
 }
 
-async fn get_location_from_map(id: &str, client: &ClientSettings) -> Result<(f64, f64), String> {
+fn contains_all_words(haystack: &str, needle: &str) -> bool {
+    needle
+        .split_whitespace()
+        .all(|word| haystack.contains(word))
+}
+
+fn is_live_camera(address: &str, non_live_camera_list: &HashSet<String>) -> bool {
+    for words in non_live_camera_list {
+        if contains_all_words(address, words) {
+            return false;
+        }
+    }
+    true
+}
+
+async fn get_location_from_map(
+    id: &str,
+    client: &ClientSettings,
+    non_live_camera_list: &HashSet<String>,
+) -> Result<(f64, f64), String> {
     match get_info(id).await {
         Ok(info) => {
             let address = info.join(" ");
+            if !is_live_camera(&address, non_live_camera_list) {
+                println!("is_non_live_camera");
+                return Err(address);
+            }
             match client.geocoding().with_address(&address).execute().await {
                 Ok(location) => match location.results.first() {
                     Some(result) => Ok((
@@ -232,6 +255,22 @@ async fn get_location_from_map(id: &str, client: &ClientSettings) -> Result<(f64
     }
 }
 
+async fn get_non_live_camera_list() -> Result<HashSet<String>, Box<dyn std::error::Error>> {
+    let url = env::var("NON_LIVE_CAMERA_LIST_URL")?;
+    let gzip = reqwest::get(url).await?.bytes().await?;
+    let mut d = GzDecoder::new(&*gzip);
+    let mut s = String::new();
+    d.read_to_string(&mut s).unwrap();
+    let v: Vec<&str> = s.split('\n').collect();
+    let mut ret = HashSet::<String>::new();
+    for id in v {
+        if !id.is_empty() {
+            ret.insert(id.to_string());
+        }
+    }
+    Ok(ret)
+}
+
 async fn get_locations_from_map(
     ids: HashSet<String>,
 ) -> Result<(HashMap<String, (f64, f64)>, HashSet<String>), Box<dyn std::error::Error>> {
@@ -240,9 +279,11 @@ async fn get_locations_from_map(
     let mut blacklist = HashSet::<String>::new();
     let mut non_live_camera = HashSet::<String>::new();
     let mut locations = HashMap::<String, (f64, f64)>::new();
+
+    let non_live_camera_list = get_non_live_camera_list().await?;
     for (count, id) in ids.into_iter().enumerate() {
         println!("location_from_map {count}/{total}");
-        match get_location_from_map(&id, &google_maps_client).await {
+        match get_location_from_map(&id, &google_maps_client, &non_live_camera_list).await {
             Ok(location) => {
                 println!("location_from_map found");
                 locations.insert(id.to_string(), location);
@@ -284,16 +325,24 @@ struct VideoResult2 {
 
 async fn is_live(id: &str) -> Result<bool, Box<dyn std::error::Error>> {
     let url = env::var("LIVE_URL_BASE")? + "&id=" + id;
-    let response = get(url).await?;
-    match response.json::<VideoResult2>().await {
-        Ok(body) => {
-            if !body.items.is_empty() {
-                Ok(&body.items[0].snippet.liveBroadcastContent == "live")
+    match get(url).await {
+        Ok(response) => match response.json::<VideoResult2>().await {
+            Ok(body) => {
+                if !body.items.is_empty() {
+                    Ok(&body.items[0].snippet.liveBroadcastContent == "live")
+                } else {
+                    Ok(false)
+                }
+            }
+            Err(_) => Ok(false),
+        },
+        Err(err) => {
+            if err.to_string() == "exceeded youtube quota" {
+                Err(err)
             } else {
-                Ok(false)
+                Ok(true)
             }
         }
-        Err(_) => Ok(false),
     }
 }
 

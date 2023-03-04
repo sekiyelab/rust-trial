@@ -35,6 +35,7 @@ jobs:
           DATA_URL: ${{ secrets.DATA_URL }}
           QUERIES_URL: ${{ secrets.QUERIES_URL }}
           BLACKLIST_URL: ${{ secrets.BLACKLIST_URL }}
+          NON_LIVE_CAMERA_LIST_URL: ${{ secrets.NON_LIVE_CAMERA_LIST_URL }}
           WATCH_URL: ${{ secrets.WATCH_URL }}
         with:
           command: run
