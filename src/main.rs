@@ -16,13 +16,7 @@ use std::fs::File;
 use std::io::prelude::*;
 
 async fn get(url: String) -> Result<reqwest::Response, Box<dyn std::error::Error>> {
-    let keys = vec![
-        env::var("DEVELOPER_KEY0")?,
-        env::var("DEVELOPER_KEY1")?,
-        env::var("DEVELOPER_KEY2")?,
-        env::var("DEVELOPER_KEY3")?,
-        env::var("DEVELOPER_KEY4")?,
-    ];
+    let keys = vec![env::var("DEVELOPER_KEY0")?, env::var("DEVELOPER_KEY1")?];
     static mut CURRENT_INDEX: usize = 0;
     let key: &str;
     unsafe {
