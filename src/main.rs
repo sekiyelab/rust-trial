@@ -18,24 +18,23 @@ use std::io::prelude::*;
 async fn get(url: String) -> Result<reqwest::Response, Box<dyn std::error::Error>> {
     let keys = vec![env::var("DEVELOPER_KEY0")?, env::var("DEVELOPER_KEY1")?];
     static mut CURRENT_INDEX: usize = 0;
-    let key: &str;
     unsafe {
-        key = &keys[CURRENT_INDEX];
-    }
-    let url = url.to_owned() + "&key=" + key;
-    unsafe {
-        CURRENT_INDEX = (CURRENT_INDEX + 1) % keys.len();
-    }
-    match reqwest::get(url).await {
-        Ok(response) => {
-            if response.status().as_u16() == 403 {
-                Err("exceeded youtube quota".into())
-            } else {
-                Ok(response)
+        while CURRENT_INDEX < keys.len() {
+            let url2 = url.to_string() + "&key=" + &keys[CURRENT_INDEX];
+            match reqwest::get(url2).await {
+                Ok(response) => {
+                    if response.status().as_u16() == 403 {
+                        println!("exceeded youtube quota limit");
+                        CURRENT_INDEX += 1;
+                    } else {
+                        return Ok(response);
+                    }
+                }
+                Err(err) => return Err(Box::new(err) as Box<dyn std::error::Error>),
             }
         }
-        Err(err) => Err(Box::new(err) as Box<dyn std::error::Error>),
     }
+    Err("No available youtube key".into())
 }
 
 #[derive(Deserialize, Debug)]
@@ -197,7 +196,11 @@ struct VideoInfo {
 
 async fn get_info(id: &str) -> Result<[String; 2], Box<dyn std::error::Error>> {
     let url = env::var("INFO_URL_BASE")? + "?v=" + id + "&format=json";
-    let body = get(url).await?.json::<VideoInfo>().await?;
+    let mut response = reqwest::get(&url).await?;
+    if response.status().as_u16() == 403 {
+        response = get(url).await?;
+    }
+    let body = response.json::<VideoInfo>().await?;
     Ok([body.title, body.author_name])
 }
 
@@ -317,7 +320,18 @@ struct VideoResult2 {
     items: Vec<VideoItem2>,
 }
 
+async fn is_exists(id: &str) -> bool {
+    let url = "https://img.youtube.com/vi/".to_owned() + id + "/0.jpg";
+    match reqwest::get(url).await {
+        Ok(response) => response.status().as_u16() != 404,
+        Err(_) => false,
+    }
+}
+
 async fn is_live(id: &str) -> Result<bool, Box<dyn std::error::Error>> {
+    if !is_exists(id).await {
+        return Ok(false);
+    }
     let url = env::var("LIVE_URL_BASE")? + "&id=" + id;
     match get(url).await {
         Ok(response) => match response.json::<VideoResult2>().await {
@@ -452,8 +466,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args = env::args();
     let mut locations = get_previous_id_list().await?;
     let current_count = locations.len();
-    remove_garbage(&mut locations).await?;
-    if args.len() == 1 {
+    if args.len() != 1 {
+        remove_garbage(&mut locations).await?;
+    } else {
         let ids = get_id_list().await?;
         let mut blacklist = get_blacklist().await?;
         let mut ids = ids.difference(&blacklist).collect::<HashSet<&String>>();
