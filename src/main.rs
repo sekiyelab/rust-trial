@@ -1,3 +1,4 @@
+use chrono::{Duration, SecondsFormat, Utc};
 use csv::ReaderBuilder;
 use csv::WriterBuilder;
 use flate2::read::GzDecoder;
@@ -16,7 +17,7 @@ use std::fs::File;
 use std::io::prelude::*;
 
 async fn get(url: String) -> Result<reqwest::Response, Box<dyn std::error::Error>> {
-    let keys = vec![env::var("DEVELOPER_KEY0")?, env::var("DEVELOPER_KEY1")?];
+    let keys = vec![env::var("DEVELOPER_KEY0")?];
     static mut CURRENT_INDEX: usize = 0;
     unsafe {
         while CURRENT_INDEX < keys.len() {
@@ -53,9 +54,15 @@ struct SearchResult {
     items: Vec<Item>,
 }
 
+fn ten_days_ago() -> String {
+    let ten_days_ago = Utc::now() - Duration::days(2);
+    ten_days_ago.to_rfc3339_opts(SecondsFormat::Secs, true)
+}
+
 async fn search(query: &str) -> Result<HashSet<String>, Box<dyn std::error::Error>> {
     let mut xs = HashSet::new();
-    let url = env::var("QUERY_URL_BASE")? + "&q=" + query;
+    let url = env::var("QUERY_URL_BASE")? + "&q=" + query + "&publishedAfter=" + &ten_days_ago();
+    println!("{url}");
     let response = get(url).await?;
     if let Ok(body) = response.json::<SearchResult>().await {
         for item in body.items {
@@ -65,6 +72,27 @@ async fn search(query: &str) -> Result<HashSet<String>, Box<dyn std::error::Erro
     println!("search succeeded");
     Ok(xs)
 }
+
+// #[cfg(test)]
+// mod tests {
+//     use super::*;
+//     #[tokio::test]
+//     async fn search_test() {
+//         env::set_var("DEVELOPER_KEY0", "");
+//         env::set_var("QUERY_URL_BASE", "");
+//         let query = "camera";
+//         match search(&query).await {
+//             Ok(ids) => {
+//                 for id in ids {
+//                     println!("https://www.youtube.com/watch?v={id}");
+//                 }
+//             }
+//             Err(e) => {
+//                 eprintln!("{e}");
+//             }
+//         }
+//     }
+// }
 
 async fn get_queries() -> Result<Vec<String>, Box<dyn std::error::Error>> {
     let url = env::var("QUERIES_URL")?;
