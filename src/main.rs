@@ -59,7 +59,7 @@ struct SearchResult {
 }
 
 fn ten_days_ago() -> String {
-    let ten_days_ago = Utc::now() - Duration::days(2);
+    let ten_days_ago = Utc::now() - Duration::days(365);
     ten_days_ago.to_rfc3339_opts(SecondsFormat::Secs, true)
 }
 
