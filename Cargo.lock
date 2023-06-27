@@ -490,9 +490,9 @@ dependencies = [
 
 [[package]]
 name = "google_maps"
-version = "3.2.0"
+version = "3.2.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "17dcfd5c66fe80b046af6ad8e1ae4d6862ab13f0c6624d55d01f331ab2ffe4e7"
+checksum = "401ee65b196037495b170d056713db6821f5187cd174760e662a6ea240762ca6"
 dependencies = [
  "backoff",
  "chrono",
@@ -918,9 +918,9 @@ dependencies = [
 
 [[package]]
 name = "percent-encoding"
-version = "2.2.0"
+version = "2.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "478c572c3d73181ff3c2539045f6eb99e5491218eae919370993b890cdbdd98e"
+checksum = "9b2a4787296e9989611394c33f193f676704af1686e70b8f8033ab5ba9a35a94"
 
 [[package]]
 name = "phf"
