@@ -532,9 +532,9 @@ checksum = "b6c80984affa11d98d1b88b66ac8853f143217b399d3c74116778ff8fdb4ed2e"
 
 [[package]]
 name = "google_maps"
-version = "3.3.1"
+version = "3.3.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f304cf5bf2ae3e47b7a78e1fe28a2391d9d63e506f3890956b284d6d64e0c076"
+checksum = "dcb3652f4d8a2d06a9b302b29bbbdd7bfd73c23655e0c6794f636e9f74c507dc"
 dependencies = [
  "backoff",
  "chrono",
@@ -1458,9 +1458,9 @@ dependencies = [
 
 [[package]]
 name = "stream_throttle"
-version = "0.4.0"
+version = "0.5.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8b98ddf8e1b97084a330e3e13a515d557da2268ca48444a1f01c1381669f7be8"
+checksum = "e5c28c494ad34b726248a73abd7184468b351ff6218c8524f0f8a426664dcbd7"
 dependencies = [
  "futures",
  "log",
