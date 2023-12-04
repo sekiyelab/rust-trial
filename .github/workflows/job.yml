@@ -41,7 +41,7 @@ jobs:
           command: run
           args: --bin=rust-trial --package=rust-trial --manifest-path=Cargo.toml --message-format=json remove_only
       - id: "auth"
-        uses: "google-github-actions/auth@v1"
+        uses: "google-github-actions/auth@v2"
         with:
           credentials_json: "${{ secrets.GCP_CREDENTIALS }}"
       - name: "Set up Cloud SDK"
