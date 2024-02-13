@@ -15,6 +15,7 @@ use std::default::Default;
 use std::env;
 use std::fs::File;
 use std::io::prelude::*;
+use std::{error::Error, fmt};
 
 async fn get(url: String) -> Result<reqwest::Response, Box<dyn std::error::Error>> {
     let keys = vec![
@@ -300,10 +301,39 @@ async fn get_non_live_camera_list() -> Result<HashSet<String>, Box<dyn std::erro
     Ok(ret)
 }
 
+#[derive(Debug)]
+struct GoogleMapsClientError {
+    details: String,
+}
+
+impl GoogleMapsClientError {
+    fn new(msg: &str) -> GoogleMapsClientError {
+        GoogleMapsClientError {
+            details: msg.to_string(),
+        }
+    }
+}
+
+impl fmt::Display for GoogleMapsClientError {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{}", self.details)
+    }
+}
+
+impl Error for GoogleMapsClientError {
+    fn description(&self) -> &str {
+        &self.details
+    }
+}
+
 async fn get_locations_from_map(
     ids: HashSet<String>,
 ) -> Result<(HashMap<String, (f64, f64)>, HashSet<String>), Box<dyn std::error::Error>> {
-    let google_maps_client = ClientSettings::new(&env::var("GOOGLE_API_KEY")?);
+    let google_maps_client =
+        ClientSettings::try_new(&env::var("GOOGLE_API_KEY")?).map_err(|err| {
+            eprintln!("Error creating Google Maps client: {}", err);
+            GoogleMapsClientError::new(&format!("Error creating Google Maps client: {}", err))
+        })?;
     let total = ids.len();
     let mut blacklist = HashSet::<String>::new();
     let mut non_live_camera = HashSet::<String>::new();
