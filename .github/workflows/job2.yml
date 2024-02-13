@@ -14,13 +14,9 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
       - name: Install Rust toolchain
-        uses: actions-rs/toolchain@v1
-        with:
-          toolchain: stable
-          profile: minimal
-          override: true
+        uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
-      - uses: actions-rs/cargo@v1
+      - name: Run job
         env:
           DEVELOPER_KEY0: ${{ secrets.DEVELOPER_KEY0 }}
           DEVELOPER_KEY1: ${{ secrets.DEVELOPER_KEY1 }}
@@ -37,9 +33,7 @@ jobs:
           BLACKLIST_URL: ${{ secrets.BLACKLIST_URL }}
           NON_LIVE_CAMERA_LIST_URL: ${{ secrets.NON_LIVE_CAMERA_LIST_URL }}
           WATCH_URL: ${{ secrets.WATCH_URL }}
-        with:
-          command: run
-          args: --bin=rust-trial --package=rust-trial --manifest-path=Cargo.toml --message-format=json
+        run: cargo run --bin=rust-trial --package=rust-trial --manifest-path=Cargo.toml --message-format=json
       - id: "auth"
         uses: "google-github-actions/auth@v2"
         with:
